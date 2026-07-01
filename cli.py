@@ -14,6 +14,9 @@ Usage :
 
     # Lister les modèles disponibles
     python cli.py --list-models
+
+    # Utiliser le routeur neuronal (nécessite un entraînement préalable)
+    python cli.py "Combien font 345 * 678 ?" --router neural
 """
 
 from __future__ import annotations
@@ -51,6 +54,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--list-models",
         action="store_true",
         help="Affiche la liste des modèles spécialisés disponibles puis quitte.",
+    )
+    parser.add_argument(
+        "--router",
+        choices=["heuristic", "neural"],
+        default="heuristic",
+        help="Routeur à utiliser : 'heuristic' (défaut, règles) ou "
+             "'neural' (MLP 12 couches, nécessite entraînement préalable).",
     )
     return parser
 
@@ -106,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {name}")
         return 0
 
-    orch = Orchestrator()
+    orch = Orchestrator(router_mode=args.router)
 
     if args.interactive:
         return _run_interactive(orch, pretty=args.pretty)
