@@ -134,6 +134,16 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "pattern observer en Java", "structure de données pile",
         "algorithme Dijkstra", "expression régulière pour valider un email",
         "hash map en Go", "serveur HTTP en Rust",
+        "tri à bulles en C", "reverse d'une chaîne de caractères",
+        "créer un tableau 2D dynamique", "implémenter une pile LIFO",
+        "parser un fichier CSV en Python", "routeur Express en Node.js",
+        "effectuer une requête HTTP GET en JavaScript", "read et write sur un fichier",
+        "générer un nombre aléatoire entre 1 et 100", "compter les mots dans une phrase",
+        "enlever les doublons d'une liste", "fusionner deux listes triées",
+        "vérifier si un mot est un palindrome", "implémenter le pattern MVC",
+        "connecter une application à MongoDB", "créer un thread en Python",
+        "convertir JSON en objet Python", "serialiser un dictionnaire en YAML",
+        "faire un CRUD complet avec Django", "implémenter un cache LRU",
     ],
     "math": [
         "2x + 3 = 11", "15% de 200", "345 * 678", "racine carrée de 144",
@@ -143,6 +153,15 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "équation du second degré x^2 - 5x + 6 = 0", "limite de 1/x quand x tend vers 0",
         "permutation de 5 éléments", "volume d'une sphère",
         "résolution de système linéaire", "polynôme du second degré",
+        "aire d'un triangle", "périmètre d'un cercle",
+        "simplifier la fraction 12/18", "puissance de 2 à 10",
+        "somme des entiers de 1 à 100", "moyenne de 5 notes",
+        "coefficient directeur d'une droite", "équation d'une parabole",
+        "déterminant d'une matrice 2x2", "combinaison de 3 parmi 10",
+        "variance d'une série statistique", "écart-type d'un échantillon",
+        "convergence d'une suite", "développement limité de e^x",
+        "intégrale double", "théorème des accroissements finis",
+        "nombre complexe module et argument", "résoudre x^4 - 1 = 0",
     ],
     "creative": [
         "une histoire de science-fiction sur des robots", "un poème sur la pluie",
@@ -153,6 +172,14 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "une histoire triste sur un vieil homme", "un récit d'aventure en mer",
         "un poème épique sur la guerre", "une pièce de théâtre comique",
         "une histoire fantastique avec des dragons",
+        "un conte pour enfants sur la lune", "un thriller psychologique",
+        "une lettre d'amour à un inconnu", "un script de pub radio humoristique",
+        "une chronique d'un voyage dans le temps", "un texte sur la solitude nocturne",
+        "un récit de survie en montagne", "un conte noir sur un détective",
+        "une description d'un paysage en automne", "un journal intime fictif",
+        "une parabole sur la confiance", "un portrait robot en prose",
+        "une histoire dystopique en 2077", "un dialogue entre deux planètes",
+        "un poème sur le passage du temps", "un scénario de pub pour un parfum",
     ],
     "factual": [
         "la photosynthèse", "la relativité restreinte", "le changement climatique",
@@ -162,6 +189,16 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "le cycle de l'eau", "la structure de l'ADN", "les bienfaits du sommeil",
         "la différence entre TCP et UDP", "le principe du blockchain",
         "l'histoire de la musique classique",
+        "la conquête de l'espace", "le fonctionnement du cerveau humain",
+        "l'invention de l'imprimerie", "la mécanique quantique pour les nuls",
+        "les énergies renouvelables", "le deep learning expliqué simplement",
+        "l'histoire d'Internet", "comment fonctionne un GPS",
+        "le réchauffement climatique et ses conséquences", "le système solaire",
+        "la guerre froide résumée", "les droits de l'homme",
+        "l'importance de la biodiversité", "la révolution numérique",
+        "comment fonctionne une pile à combustible", "les trous noirs",
+        "l'histoire de la physique quantique", "la Silicon Valley",
+        "le marché boursier expliqué", "les algorithmes de tri comparés",
     ],
     "translation": [
         "bonjour tout le monde en anglais", "merci beaucoup en japonais",
@@ -169,6 +206,10 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "comment allez-vous en italien", "au revoir en portugais",
         "bon appétit en russe", "joyeux anniversaire en arabe",
         "il fait beau aujourd'hui en chinois", "je suis étudiant en coréen",
+        "bienvenue en turc", "je m'appelle en néerlandais",
+        "je ne comprends pas en suédois", "combien ça coûte en finlandais",
+        "où est la gare en polonais", "je voudrais un café en grec",
+        "excusez-moi en hébreu", " rendez-vous à 18h en hindi",
     ],
     "general": [
         "mieux dormir la nuit", "gérer le stress au travail",
@@ -176,8 +217,55 @@ RICH_EXPRESSIONS: dict[str, list[str]] = {
         "améliorer sa productivité", "faire du sport régulièrement",
         "manger plus sainement", "voyager pas cher",
         "décorer son appartement", "choisir un métier",
+        "surmonter la procrastination", "améliorer sa confiance en soi",
+        "faire connaissance dans une nouvelle ville", "préparer un entretien d'embauche",
+        "gérer un budget limité", "entretenir des relations amicales",
+        "apprendre à cuisiner", "développer son esprit critique",
+        "réussir ses études", "trouver son équilibre vie pro/perso",
     ],
 }
+
+
+# =============================================================================
+# Paraphraseurs (augmentations simples pour la diversité)
+# =============================================================================
+# Appliqués aléatoirement pendant la génération pour varier les formulations.
+
+_PARAPHRASE_PREFIXES: list[str] = [
+    "", "", "",  # majoritairement sans préfixe (naturel)
+    "peux-tu ", "pourrais-tu ", "est-ce que tu peux ", "je voudrais ",
+    "j'aimerais ", "s'il te plaît, ", "help, ", "dis-moi ",
+    "explique-moi ", "donne-moi ", "montre-moi ", "comment faire ",
+    "je n'arrive pas à ", "aurais-tu une idée pour ",
+]
+
+_PARAPHRASE_SUFFIXES: list[str] = [
+    "", "", "",  # majoritairement sans suffixe
+    " ?", " !", ".", " stp", " s'il te plaît",
+    " merci", " si possible", " en détail",
+    " rapidement", " simplement", " pour un débutant",
+]
+
+
+def _apply_paraphrase(text: str) -> str:
+    """Ajoute aléatoirement un préfixe/suffixe pour diversifier."""
+    if random.random() < 0.4:  # 40% du temps, ajouter un préfixe
+        prefix = random.choice(_PARAPHRASE_PREFIXES)
+        text = prefix + text
+    if random.random() < 0.3:  # 30% du temps, ajouter un suffixe
+        suffix = random.choice(_PARAPHRASE_SUFFIXES)
+        text = text + suffix
+    return text
+
+
+def _apply_case_variation(text: str) -> str:
+    """Applique aléatoirement une variation de casse (30% du temps)."""
+    r = random.random()
+    if r < 0.1:
+        return text.upper()  # tout majuscules (exclamation simulée)
+    elif r < 0.15:
+        return text.capitalize()  # première lettre majuscule
+    return text  # minuscules (défaut)
 
 
 def _extract_keywords(signals_dict: dict) -> list[str]:
@@ -230,9 +318,9 @@ def generate_dataset(
             template = random.choice(cat_templates)
             kw = random.choice(keywords) if keywords else "quelque chose"
             text = template.format(keyword=kw)
-            # Ajout éventuel de ponctuation de fin.
-            if random.random() < 0.3:
-                text += random.choice([" ?", " !", ".", ""])
+            # Paraphrase + variation de casse pour la diversité.
+            text = _apply_paraphrase(text)
+            text = _apply_case_variation(text)
             all_texts.append(text)
             all_labels.append(cat_idx)
 
@@ -240,14 +328,8 @@ def generate_dataset(
         for _ in range(extra_variations):
             if cat_expressions:
                 expr = random.choice(cat_expressions)
-                # Forme variée : parfois avec préfixe, parfois nu.
-                prefix = random.choice(
-                    ["", "", "", "peux-tu ", "je voudrais ",
-                     "comment ", "est-ce que tu peux "]
-                )
-                text = prefix + expr
-                if random.random() < 0.2:
-                    text += random.choice([" ?", ".", " stp", " s'il te plaît"])
+                text = _apply_paraphrase(expr)
+                text = _apply_case_variation(text)
                 all_texts.append(text)
                 all_labels.append(cat_idx)
 

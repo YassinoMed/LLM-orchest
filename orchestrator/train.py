@@ -1,23 +1,31 @@
-"""Script d'entraînement du MLP 12 couches pour le routage neuronal.
+"""Script d'entraînement du Transformer 12 couches pour le routage neuronal.
+
+Optimisé pour NVIDIA L4 (24 Go VRAM) avec mixed precision (AMP).
 
 Usage depuis la racine du projet :
 
     python -m orchestrator.train [OPTIONS]
 
-Options :
+Options principales :
 
-    --epochs N         Nombre d'époques (défaut 30)
-    --batch-size N     Taille des mini-batches (défaut 64)
-    --lr RATE          Taux d'apprentissage (défaut 0.001)
-    --dropout RATE     Taux de dropout (défaut 0.3)
-    --weight-decay     Régularisation L2 (défaut 1e-4)
-    --max-features     Taille du vocabulaire TF-IDF (défaut 5000)
-    --samples-per-cat  Exemples par catégorie (défaut 500)
-    --output-dir       Répertoire de sortie (défaut checkpoints/)
-    --data-dir         Répertoire des données (défaut data/)
-    --seed             Graine aléatoire (défaut 42)
-    --device           Device forcé (auto/cpu/mps/cuda, défaut auto)
-    --no-save          Ne pas sauvegarder le modèle (pour les tests)
+    --epochs N           Nombre d'époques (défaut 30)
+    --batch-size N       Taille des mini-batches (défaut 128)
+    --lr RATE            Taux d'apprentissage (défaut 3e-4, adapté pour Transformer)
+    --d-model DIM        Dimension du modèle (défaut 256)
+    --nhead N            Têtes d'attention (défaut 8)
+    --dim-ff DIM         Dimension FFN (défaut 1024)
+    --num-layers N       Couches Transformer (défaut 12)
+    --max-seq-len N      Longueur max des séquences (défaut 64)
+    --max-vocab N        Taille du vocabulaire (défaut 10000)
+    --samples-per-cat N  Exemples par catégorie (défaut 5000)
+    --extra-variations N Variations enrichies par catégorie (défaut 500)
+    --dropout RATE       Taux de dropout (défaut 0.1)
+    --weight-decay       Régularisation L2 (défaut 1e-4)
+    --output-dir         Répertoire de sortie (défaut checkpoints/)
+    --data-dir           Répertoire des données (défaut data/routing_dataset)
+    --seed               Graine aléatoire (défaut 42)
+    --device             Device forcé (auto/cpu/mps/cuda, défaut auto)
+    --no-save            Ne pas sauvegarder le modèle (pour les tests)
 """
 
 from __future__ import annotations
@@ -42,20 +50,31 @@ logger = logging.getLogger("orchestrator.train")
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="orchestrator.train",
-        description="Entraîne le MLP 12 couches pour le routage neuronal.",
+        description="Entraîne le Transformer 12 couches pour le routage neuronal.",
     )
+    # Modèle
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--max-features", type=int, default=5000)
-    parser.add_argument("--samples-per-cat", type=int, default=500)
+    parser.add_argument("--d-model", type=int, default=256)
+    parser.add_argument("--nhead", type=int, default=8)
+    parser.add_argument("--dim-ff", type=int, default=1024)
+    parser.add_argument("--num-layers", type=int, default=12)
+    parser.add_argument("--max-seq-len", type=int, default=64)
+    parser.add_argument("--max-vocab", type=int, default=10000)
+    # Données
+    parser.add_argument("--samples-per-cat", type=int, default=5000)
+    parser.add_argument("--extra-variations", type=int, default=500)
     parser.add_argument("--output-dir", default="checkpoints")
     parser.add_argument("--data-dir", default="data/routing_dataset")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--no-save", action="store_true", help="Ne pas sauvegarder")
+    parser.add_argument("--no-save", action="store_true")
+    parser.add_argument("--amp", action="store_true", default=True,
+                        help="Activer la mixed precision (défaut : True)")
+    parser.add_argument("--no-amp", action="store_true", help="Désactiver AMP")
     return parser.parse_args(argv)
 
 
@@ -76,16 +95,20 @@ def main(argv: list[str] | None = None) -> None:
 
     from .data_generation import generate_dataset, save_dataset
     from .models import MODEL_NAMES
-    from .neural_model import MLPClassifier12
-    from .tfidf import TfidfVectorizer
+    from .neural_model import TransformerClassifier12
+    from .tokenizer import WordTokenizer
 
     args = _parse_args(argv)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
     device = _get_device(args.device)
-    logger.info("Device : %s", device)
+    use_amp = args.amp and not args.no_amp and device.type == "cuda"
+
+    logger.info("Device : %s | AMP (mixed precision) : %s", device, use_amp)
     logger.info("Catégories : %s (%d classes)", list(MODEL_NAMES), len(MODEL_NAMES))
+    logger.info("Architecture : Transformer %d couches, d_model=%d, nhead=%d, ff=%d",
+                 args.num_layers, args.d_model, args.nhead, args.dim_ff)
 
     # =====================================================================
     # 1. Génération / chargement du dataset
@@ -96,10 +119,12 @@ def main(argv: list[str] | None = None) -> None:
         from .data_generation import load_dataset
         dataset = load_dataset(data_path)
     else:
-        logger.info("Génération du dataset synthétique (%d ex/cat)...", args.samples_per_cat)
+        logger.info("Génération du dataset synthétique (%d ex/cat, %d extra)...",
+                     args.samples_per_cat, args.extra_variations)
         dataset = generate_dataset(
             seed=args.seed,
             samples_per_category=args.samples_per_cat,
+            extra_variations=args.extra_variations,
         )
         save_dataset(dataset, data_path)
 
@@ -111,59 +136,88 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # =====================================================================
-    # 2. Vectorisation TF-IDF (fit sur train uniquement)
+    # 2. Tokenisation (fit sur train uniquement)
     # =====================================================================
-    logger.info("Vectorisation TF-IDF (max_features=%d)...", args.max_features)
-    vectorizer = TfidfVectorizer(max_features=args.max_features, min_df=2)
+    logger.info("Tokenisation (max_vocab=%d, max_seq_len=%d)...",
+                args.max_vocab, args.max_seq_len)
+    tokenizer = WordTokenizer(
+        max_vocab_size=args.max_vocab,
+        min_freq=2,
+        max_seq_len=args.max_seq_len,
+    )
 
     # Fit sur le train.
-    train_texts = dataset["train"]["text"]
-    vectorizer.fit(train_texts)
-    logger.info("Vocabulaire : %d termes", vectorizer.vocab_size)
+    tokenizer.fit(dataset["train"]["text"])
+    logger.info("Vocabulaire : %d termes (dont 2 tokens spéciaux)", tokenizer.vocab_size)
 
-    # Transform sur tous les splits.
-    X_train = vectorizer.transform(dataset["train"]["text"])
-    X_val = vectorizer.transform(dataset["val"]["text"])
-    X_test = vectorizer.transform(dataset["test"]["text"])
+    # Tokeniser tous les splits.
+    train_ids, train_masks = tokenizer.transform(dataset["train"]["text"])
+    val_ids, val_masks = tokenizer.transform(dataset["val"]["text"])
+    test_ids, test_masks = tokenizer.transform(dataset["test"]["text"])
 
     y_train = np.array(dataset["train"]["label"], dtype=np.int64)
     y_val = np.array(dataset["val"]["label"], dtype=np.int64)
     y_test = np.array(dataset["test"]["label"], dtype=np.int64)
 
     # Conversion en tenseurs PyTorch.
-    X_train_t = torch.from_numpy(X_train).to(device)
-    X_val_t = torch.from_numpy(X_val).to(device)
-    X_test_t = torch.from_numpy(X_test).to(device)
+    train_ids_t = torch.from_numpy(train_ids).to(device)
+    train_masks_t = torch.from_numpy(train_masks).to(device)
+    val_ids_t = torch.from_numpy(val_ids).to(device)
+    val_masks_t = torch.from_numpy(val_masks).to(device)
+    test_ids_t = torch.from_numpy(test_ids).to(device)
+    test_masks_t = torch.from_numpy(test_masks).to(device)
     y_train_t = torch.from_numpy(y_train).to(device)
     y_val_t = torch.from_numpy(y_val).to(device)
     y_test_t = torch.from_numpy(y_test).to(device)
 
-    # DataLoaders.
-    train_ds = TensorDataset(X_train_t, y_train_t)
-    val_ds = TensorDataset(X_val_t, y_val_t)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
+    # DataLoaders optimisés.
+    num_workers = 4 if device.type == "cuda" else 0
+    train_ds = TensorDataset(train_ids_t, train_masks_t, y_train_t)
+    val_ds = TensorDataset(val_ids_t, val_masks_t, y_val_t)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
 
     # =====================================================================
-    # 3. Modèle MLP 12 couches
+    # 3. Modèle Transformer 12 couches
     # =====================================================================
-    input_dim = vectorizer.vocab_size
-    model = MLPClassifier12(
-        input_dim=input_dim,
+    model = TransformerClassifier12(
+        vocab_size=tokenizer.vocab_size,
         num_classes=len(MODEL_NAMES),
+        d_model=args.d_model,
+        nhead=args.nhead,
+        num_layers=args.num_layers,
+        dim_feedforward=args.dim_ff,
         dropout=args.dropout,
+        max_seq_len=args.max_seq_len,
     ).to(device)
 
     n_params = model.count_parameters()
-    logger.info("Modèle MLP 12 couches : %d paramètres, input_dim=%d", n_params, input_dim)
+    logger.info("Modèle Transformer %d couches : %s paramètres",
+                args.num_layers, f"{n_params:,}")
 
     # =====================================================================
-    # 4. Entraînement
+    # 4. Entraînement avec AMP (mixed precision)
     # =====================================================================
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+
+    # GradScaler pour AMP.
+    scaler = torch.amp.GradScaler(enabled=use_amp)
 
     best_val_acc = 0.0
     best_state = None
@@ -171,8 +225,8 @@ def main(argv: list[str] | None = None) -> None:
     patience = 7  # early stopping
 
     print(f"\n{'Epoch':>5}  {'Train Loss':>10}  {'Train Acc':>9}  "
-          f"{'Val Loss':>9}  {'Val Acc':>8}  {'Time':>6}")
-    print("-" * 60)
+          f"{'Val Loss':>9}  {'Val Acc':>8}  {'LR':>8}  {'Time':>6}")
+    print("-" * 70)
 
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
@@ -183,17 +237,26 @@ def main(argv: list[str] | None = None) -> None:
         train_correct = 0
         train_total = 0
 
-        for xb, yb in train_loader:
+        for ids, masks, labels in train_loader:
             optimizer.zero_grad()
-            logits = model(xb)
-            loss = criterion(logits, yb)
-            loss.backward()
-            optimizer.step()
 
-            train_loss += loss.item() * xb.size(0)
+            if use_amp:
+                with torch.amp.autocast("cuda"):
+                    logits = model(ids, masks)
+                    loss = criterion(logits, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                logits = model(ids, masks)
+                loss = criterion(logits, labels)
+                loss.backward()
+                optimizer.step()
+
+            train_loss += loss.item() * ids.size(0)
             preds = logits.argmax(dim=1)
-            train_correct += (preds == yb).sum().item()
-            train_total += xb.size(0)
+            train_correct += (preds == labels).sum().item()
+            train_total += ids.size(0)
 
         train_loss /= train_total
         train_acc = train_correct / train_total
@@ -205,22 +268,31 @@ def main(argv: list[str] | None = None) -> None:
         val_total = 0
 
         with torch.no_grad():
-            for xb, yb in val_loader:
-                logits = model(xb)
-                loss = criterion(logits, yb)
-                val_loss += loss.item() * xb.size(0)
+            for ids, masks, labels in val_loader:
+                if use_amp:
+                    with torch.amp.autocast("cuda"):
+                        logits = model(ids, masks)
+                        loss = criterion(logits, labels)
+                else:
+                    logits = model(ids, masks)
+                    loss = criterion(logits, labels)
+
+                val_loss += loss.item() * ids.size(0)
                 preds = logits.argmax(dim=1)
-                val_correct += (preds == yb).sum().item()
-                val_total += xb.size(0)
+                val_correct += (preds == labels).sum().item()
+                val_total += ids.size(0)
 
         val_loss /= val_total
         val_acc = val_correct / val_total
         elapsed = time.time() - t0
+        current_lr = scheduler.get_last_lr()[0]
 
         print(
             f"{epoch:>5}  {train_loss:>10.4f}  {train_acc:>8.1%}  "
-            f"{val_loss:>9.4f}  {val_acc:>7.1%}  {elapsed:>5.1f}s"
+            f"{val_loss:>9.4f}  {val_acc:>7.1%}  {current_lr:>7.5f}  {elapsed:>5.1f}s"
         )
+
+        scheduler.step()
 
         # Early stopping.
         if val_acc > best_val_acc:
@@ -243,15 +315,20 @@ def main(argv: list[str] | None = None) -> None:
     model.to(device)
 
     with torch.no_grad():
-        test_logits = model(X_test_t)
+        if use_amp:
+            with torch.amp.autocast("cuda"):
+                test_logits = model(test_ids_t, test_masks_t)
+        else:
+            test_logits = model(test_ids_t, test_masks_t)
         test_preds = test_logits.argmax(dim=1)
         test_acc = (test_preds == y_test_t).float().mean().item()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='*70}")
     print(f"Meilleur val_acc : {best_val_acc:.1%}")
     print(f"Test accuracy    : {test_acc:.1%}")
     print(f"Nombre de paramètres : {n_params:,}")
-    print(f"{'='*60}")
+    print(f"Device : {device} | AMP : {use_amp}")
+    print(f"{'='*70}")
 
     # =====================================================================
     # 6. Sauvegarde
@@ -261,25 +338,32 @@ def main(argv: list[str] | None = None) -> None:
         output.mkdir(parents=True, exist_ok=True)
 
         model_path = output / "model.pt"
-        tfidf_path = output / "tfidf.json"
+        tokenizer_path = output / "tokenizer.json"
 
         # Sauvegarde modèle (sur CPU pour la portabilité).
         model.cpu()
         torch.save(
-            {"model_state_dict": model.state_dict(),
-             "input_dim": input_dim,
-             "num_classes": len(MODEL_NAMES),
-             "best_val_acc": best_val_acc,
-             "test_acc": test_acc},
+            {
+                "model_state_dict": model.state_dict(),
+                "vocab_size": tokenizer.vocab_size,
+                "num_classes": len(MODEL_NAMES),
+                "d_model": args.d_model,
+                "nhead": args.nhead,
+                "num_layers": args.num_layers,
+                "dim_feedforward": args.dim_ff,
+                "max_seq_len": args.max_seq_len,
+                "best_val_acc": best_val_acc,
+                "test_acc": test_acc,
+            },
             str(model_path),
         )
 
-        # Sauvegarde vectoriseur.
-        vectorizer.save(str(tfidf_path))
+        # Sauvegarde tokenizer.
+        tokenizer.save(str(tokenizer_path))
 
         print(f"\nCheckpoints sauvegardés :")
-        print(f"  Modèle : {model_path}")
-        print(f"  TF-IDF : {tfidf_path}")
+        print(f"  Modèle   : {model_path}")
+        print(f"  Tokenizer: {tokenizer_path}")
         print(f"\nPour utiliser le mode neuronal :")
         print(f"  python cli.py 'Ta requête' --router neural")
     else:
