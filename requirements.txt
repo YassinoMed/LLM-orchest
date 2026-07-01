@@ -1,0 +1,6 @@
+# Dépendances de l'API HTTP (le cœur + CLI n'utilisent que la stdlib)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# Tests
+pytest>=8.0
