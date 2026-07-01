@@ -48,3 +48,9 @@ coverage.xml
 
 # Logs
 *.log
+
+# Artefacts ML (datasets générés + checkpoints entraînés localement)
+data/
+checkpoints/
+*.pt
+*.pth

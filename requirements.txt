@@ -4,3 +4,9 @@ uvicorn[standard]>=0.27
 
 # Tests
 pytest>=8.0
+
+# --- Mode neuronal (optionnel, pour l'entraînement et l'inférence) ---
+# Le cœur + CLI fonctionnent sans ces dépendances.
+torch>=2.0
+numpy>=1.24
+datasets>=2.14
